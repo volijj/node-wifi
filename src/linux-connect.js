@@ -2,28 +2,63 @@ const execFile = require('child_process').execFile;
 const env = require('./env');
 
 function connectToWifi(config, ap, callback) {
-  const args = [];
-  args.push('-w');
-  args.push('10');
-  args.push('device');
-  args.push('wifi');
-  args.push('connect');
-  args.push(ap.ssid);
-  args.push('password');
-  args.push(ap.password);
+  console.log('Connecting to WiFi...');
+  // New connection method
+  const addArgs = [
+    'connection',
+    'add',
+    'type',
+    'wifi',
+    'con-name',
+    ap.ssid,
+    'ssid',
+    ap.ssid,
+    'wifi-sec.key-mgmt',
+    'wpa-psk',
+    'wifi-sec.psk',
+    ap.password
+  ];
 
-  if (config.iface) {
-    args.push('ifname');
-    args.push(config.iface);
+  // Add BSSID if available
+  if (ap.bssid) {
+    addArgs.push('wifi.bssid');
+    addArgs.push(ap.bssid);
   }
 
-  execFile('nmcli', args, { env }, (err, resp) => {
-    // Errors from nmcli came from stdout, we test presence of 'Error: ' string
-    if (resp.includes('Error: ')) {
-      err = new Error(resp.replace('Error: ', ''));
-    }
-    callback && callback(err);
+  // Add interface if specified
+  if (config.iface) {
+    addArgs.push('ifname');
+    addArgs.push(config.iface);
+  }
+
+  execFile('nmcli', ['connection', 'delete', ap.ssid], { env }, (delErr, delResp) => {
+    // First create the connection profile
+    execFile('nmcli', addArgs, { env }, (err, resp) => {
+      if (err || resp.includes('Error: ')) {
+        const error = err || new Error(resp.replace('Error: ', ''));
+        callback && callback(error);
+        return;
+      }
+
+        // Then activate the connection
+        const upArgs = [
+          'connection',
+          'up',
+          ap.ssid
+        ];
+
+        execFile('nmcli', upArgs, { env }, (err, resp) => {
+          if (err || resp.includes('Error: ')) {
+            const error = err || new Error(resp.replace('Error: ', ''));
+            callback && callback(error);
+            return;
+          }
+          callback && callback(null);
+        });
+      });
   });
+  
+
 }
 
 module.exports = config => {
